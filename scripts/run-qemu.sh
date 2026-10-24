@@ -11,7 +11,19 @@ export QEMU_VARS=${QEMU_VARS:-/usr/share/AAVMF/AAVMF_VARS.fd}
 export QEMU_SMP=${QEMU_SMP:-2}
 export QEMU_RAM_GB=${QEMU_RAM_GB:-7}
 export CMDLINE="cpus=$QEMU_SMP virtio_gpu=1 ${CMDLINE:-}"
-args=(-nic none -device virtio-gpu-device,id=vgpu,xres=1125,yres=2048)
+case "${VIRGL:-0}" in
+  0) args=(-nic none -device virtio-gpu-device,id=vgpu,xres=1125,yres=2048) ;;
+  1)
+    export CMDLINE="$CMDLINE virtio_gpu_virgl=1"
+    case "${VIRGL_SELFTEST:-0}" in
+      0) ;;
+      1) export CMDLINE="$CMDLINE virtio_gpu_3d_test=1" ;;
+      *) echo 'VIRGL_SELFTEST must be 0 or 1' >&2; exit 2 ;;
+    esac
+    args=(-nic none -device virtio-gpu-gl-device,id=vgpu,xres=1125,yres=2048 -display egl-headless)
+    ;;
+  *) echo 'VIRGL must be 0 or 1' >&2; exit 2 ;;
+esac
 if [[ -n "${QEMU_DATA_DIR:-}" ]]; then args+=(-L "$QEMU_DATA_DIR"); fi
 [[ -f "$QEMU_EFI" && -f "$QEMU_VARS" ]] || { echo 'Set QEMU_EFI/QEMU_VARS to your AArch64 UEFI firmware files.' >&2; exit 2; }
 cd "$WORKSPACE"

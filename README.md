@@ -4,7 +4,9 @@
 
 本项目基于 [OOSEX GANG 的 HackiOS](https://github.com/oosexgang/hackios-xnu-kernel)，提供 XNU 驱动扩展、固定版本补丁、测试工具和验证记录，研究非 Apple ARM64 平台上的内核启动、设备接入与图形显示路径。
 
-目前已在 QEMU 中运行 iOS 16.5 用户态，进入 SpringBoard 桌面并操作系统设置；新增 VirtIO-GPU 驱动已完成 2D 显示链路验证。Redmi K20 Pro 相关代码处于实验性适配阶段，尚未经过真机验证。**当前图形合成仍采用 CPU 软件渲染，未实现 Metal 或 3D 硬件加速。**
+目前已在 QEMU 中运行 iOS 16.5 用户态，进入 SpringBoard 桌面并操作系统设置；新增 VirtIO-GPU 驱动已完成 2D 显示链路验证。Redmi K20 Pro 相关代码处于实验性适配阶段，尚未经过真机验证。**当前图形合成仍采用 CPU 软件渲染，未实现 Metal 或桌面硬件加速。**
+
+最新 v0.2 新增显式启用的 **virgl v1 传输测试**：已在 llvmpipe 宿主上完成上下文创建、3D 资源、命令提交及两轮全像素读回验证。该路径尚未接入应用图形 API，详见[virgl 实验说明](experimental/virgl/README.md)。
 
 ## 功能与验证状态
 
@@ -15,7 +17,8 @@
 | Adreno 640 | 固件解析、时钟控制与恢复、GMU/SMMU 分阶段探测 | 主机模型测试与 ARM64 编译；未真机验证 |
 | Goodix GT9886 | GPIO I2C 通信、触摸报告校验与坐标转换 | 主机模型测试与 ARM64 编译；未真机验证 |
 | UFS 存储 | 只读策略及已有 UEFI 存储路径复用 | 策略测试；未实现原生冷初始化及 UFS 根文件系统启动 |
-| 3D / Metal | 图形 API、上下文与 GPU 命令提交链路待实现 | 尚未验证 |
+| virgl v1 传输 | 显式启用的上下文、3D资源、清屏提交与读回测试 | llvmpipe宿主实测，两轮各4096像素校验通过 |
+| 应用 3D / Metal | 用户态图形API与桌面合成接入待实现 | 未实现硬件加速 |
 
 VirtIO-GPU 运行记录确认至少完成 **240 次帧传输**，对应完成标记 `fence 488`。该指标是累计完成次数，不是帧率，不构成性能提升结论。
 
@@ -82,7 +85,7 @@ python3 scripts/prepare.py work/hackios
 bash scripts/test-host.sh
 ```
 
-测试使用 GCC 与 ASan/UBSan，覆盖 GT9886、I2C、A640、VirtIO-GPU 及 UFS 策略。GitHub Actions 中配置了相同的测试任务。主机测试结果不替代真机验证；CI 不启动 iOS，也不验证 3D 加速。
+测试使用 GCC 与 ASan/UBSan，覆盖 GT9886、I2C、A640、VirtIO-GPU（含virgl命令编码）及 UFS 策略；另以原生测试检查软件EGL适配器的错误处理。GitHub Actions 中配置了相同的测试任务。主机测试结果不替代真机验证；CI 不启动 iOS，也不验证 3D 加速。
 
 ### 启动 QEMU
 
@@ -95,7 +98,9 @@ python3 scripts/screenshot.py virtio-screen.png
 
 运行环境需要支持 `virtio-gpu-device` 的 QEMU 与 AArch64 UEFI。Debian 的默认固件路径为 `/usr/share/AAVMF/`；其他安装位置可通过 `QEMU_EFI`、`QEMU_VARS` 指定，非系统安装还可设置 `QEMU_MODULE_DIR`、`QEMU_DATA_DIR`。
 
-启动脚本启用 `virtio_gpu=1` 并添加 `-device virtio-gpu-device,id=vgpu,xres=1125,yres=2048`，保留 ramfb 用于 loader。纯 QEMU 运行应使用虚拟输入路径，不设置 `raphael=1`。QMP 默认使用本机 4445 端口，同一时刻仅允许一个客户端连接。
+启动脚本默认启用 `virtio_gpu=1` 并添加 `-device virtio-gpu-device,id=vgpu,xres=1125,yres=2048`，保留 ramfb 用于 loader。纯 QEMU 运行应使用虚拟输入路径，不设置 `raphael=1`。QMP 默认使用本机 4445 端口，同一时刻仅允许一个客户端连接。
+
+需要测试虚拟3D传输时，请按[virgl实验配置](experimental/virgl/README.md)显式启用。默认2D配置保持不变；GL后端的截图限制与ramfb镜像采集方式也在该文档中说明。
 
 ## 项目结构
 
@@ -106,6 +111,7 @@ python3 scripts/screenshot.py virtio-screen.png
 | `scripts/` | 源码准备、主机测试、QEMU 启动与截图工具 |
 | `tests/` | 协议、固件、内存及访问策略测试 |
 | `evidence/` | 实测日志、环境记录与验证报告 |
+| `experimental/virgl/` | virgl传输说明与显式启用的宿主软件EGL测试适配器 |
 | `docs/` | 屏幕截图、启动录屏及采集说明 |
 | `downloads/` | 实验内核、源码与日志归档 |
 | `upstream.json` | 上游仓库及固定提交信息 |
@@ -114,7 +120,7 @@ python3 scripts/screenshot.py virtio-screen.png
 
 ## 已知限制与后续工作
 
-- **图形加速**：CoreAnimation 目前使用软件渲染。当前云环境未暴露物理 GPU，安装的 QEMU 也没有 virgl GL 设备后端；后续仍需宿主图形后端、iOS 图形 API 以及上下文和命令提交适配。
+- **图形加速**：CoreAnimation 目前使用软件渲染。当前云环境未暴露物理 GPU；v0.2 已补齐 QEMU GL 模块并通过 llvmpipe 进行基础 virgl 传输验证，后续仍需用户态图形 API、着色器/绘制和桌面合成接入。
 - **手机平台**：需先验证 loader、供电和寄存器访问，再推进 GMU 地址空间、固件启动、GX 供电与 CP/SQE 命令执行。
 - **存储启动**：原生 UFS 冷初始化、块设备接入及从 UFS 挂载根文件系统的启动链尚未完成。
 
