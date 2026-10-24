@@ -66,7 +66,9 @@ jobs:
               sha(path) + '  ' + path.name + '\n' for path in sorted(out.iterdir())
           ))
           assets = sorted(out.iterdir())
-          release = api(f'repos/{repo}/releases/tags/{tag}')
+          # Drafts without a published tag are not returned by the tag endpoint.
+          release = api(f'repos/{repo}/releases/422600429')
+          assert release['tag_name'] == tag, 'unexpected release tag'
           assert release['target_commitish'] == source, 'unexpected release source'
           if not release['draft']:
               print('Release is already published; verifying existing assets only.')
@@ -87,7 +89,7 @@ jobs:
                   'gh', 'release', 'edit', tag, '--repo', repo,
                   '--draft=false', '--prerelease', '--latest=false'
               ], check=True)
-          published = api(f'repos/{repo}/releases/tags/{tag}')
+          published = api(f'repos/{repo}/releases/422600429')
           assert not published['draft'] and published['prerelease']
           assert published['target_commitish'] == source
           print('Published:', published['html_url'])
