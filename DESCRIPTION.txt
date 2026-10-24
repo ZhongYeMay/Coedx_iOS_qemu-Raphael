@@ -1,0 +1,1 @@
+面向 Redmi K20 Pro（SM8150）与 QEMU ARM64 的 HackiOS 研究适配，提供 XNU 实验驱动、VirtIO-GPU 2D 显示、测试工具与实测记录。
