@@ -67,7 +67,55 @@ static inline struct rwvg_hdr rwvg_header(uint32_t op,uint64_t fence)
 static inline int rwvg_completion(const struct rwvg_hdr *h,uint32_t length,uint32_t id,
  uint32_t capacity,uint32_t expected,uint64_t fence)
 {
- return id==0 && length>=sizeof(*h) && length<=capacity && h->type==expected &&
+ return id==0 && length>=sizeof(*h) && length==capacity && h->type==expected &&
      (h->flags&RWVG_FENCE) && h->fence==fence;
+}
+/* Optional virgl v1 transport smoke test; these are not OpenGL/Metal APIs. */
+#define RWVG_GET_CAPSET_INFO 0x0108u
+#define RWVG_GET_CAPSET 0x0109u
+#define RWVG_OK_CAPSET_INFO 0x1102u
+#define RWVG_OK_CAPSET 0x1103u
+#define RWVG_CTX_CREATE 0x0200u
+#define RWVG_CTX_DESTROY 0x0201u
+#define RWVG_CTX_ATTACH 0x0202u
+#define RWVG_CTX_DETACH 0x0203u
+#define RWVG_CREATE_3D 0x0204u
+#define RWVG_FROM_HOST_3D 0x0206u
+#define RWVG_SUBMIT_3D 0x0207u
+#define RWVG_TEST_WIDTH 64u
+#define RWVG_TEST_HEIGHT 64u
+#define RWVG_TEST_BYTES (RWVG_TEST_WIDTH*RWVG_TEST_HEIGHT*4u)
+struct rwvg_cap_info_req {struct rwvg_hdr hdr;uint32_t index,pad;};
+struct rwvg_cap_info {struct rwvg_hdr hdr;uint32_t id,version,size,pad;};
+struct rwvg_cap_req {struct rwvg_hdr hdr;uint32_t id,version;};
+struct rwvg_ctx_create {struct rwvg_hdr hdr;uint32_t length,init;char name[64];};
+struct rwvg_ctx_resource {struct rwvg_hdr hdr;uint32_t resource,pad;};
+struct rwvg_create3d {struct rwvg_hdr hdr;uint32_t resource,target,format,bind,width,height,depth,array_size,last_level,samples,flags,pad;};
+struct rwvg_box {uint32_t x,y,z,w,h,d;};
+struct rwvg_transfer3d {struct rwvg_hdr hdr;struct rwvg_box box;uint64_t offset;uint32_t resource,level,stride,layer_stride;};
+struct rwvg_submit {struct rwvg_hdr hdr;uint32_t bytes,pad;};
+_Static_assert(sizeof(struct rwvg_cap_info)==40,"capset info");
+_Static_assert(sizeof(struct rwvg_ctx_create)==96,"context create");
+_Static_assert(sizeof(struct rwvg_create3d)==72,"resource create3d");
+_Static_assert(sizeof(struct rwvg_transfer3d)==72,"transfer3d");
+_Static_assert(sizeof(struct rwvg_submit)==32,"submit3d prefix");
+/* virgl v1: CREATE_OBJECT(surface), SET_FRAMEBUFFER_STATE, CLEAR color0.
+ * Payload lengths count DWORDs after the packet header. No shader/rasterizer
+ * pipeline is claimed by a clear test. The second pass reuses its surface.
+ */
+static inline unsigned rwvg_virgl_clear(uint32_t *out,unsigned capacity,uint32_t resource,
+ const uint32_t rgba[4],int create_surface)
+{
+ unsigned n=create_surface?19u:13u,i=0;
+ if(!out||!rgba||!resource||capacity<n)return 0;
+ if(create_surface){
+  out[i++]=1u|(8u<<8)|(5u<<16);out[i++]=1;out[i++]=resource;
+  out[i++]=1;out[i++]=0;out[i++]=0; /* surface1, BGRA8, mip0/layer0 */
+ }
+ out[i++]=5u|(3u<<16);out[i++]=1;out[i++]=0;out[i++]=1;
+ out[i++]=7u|(8u<<16);out[i++]=4; /* PIPE_CLEAR_COLOR0 */
+ for(unsigned c=0;c<4;c++)out[i++]=rgba[c];
+ out[i++]=0;out[i++]=0;out[i++]=0; /* unused depth/stencil */
+ return i;
 }
 #endif

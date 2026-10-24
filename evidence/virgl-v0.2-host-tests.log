@@ -1,0 +1,12 @@
+PASS: GT9886 checksum, malformed frames, IDs, 10 contacts, release and scaling
+PASS: I2C address/register ordering, repeated START, byte read, NACK, STOP and timeout
+PASS: firmware truncation, overflow, regions, overlap, record limits, validation before upload, sink failures
+PASS: power/source guards, bounded clock timeout, failed writes, reverse cleanup, unrelated/inherited votes
+PASS: virgl v1 surface/framebuffer/clear packet encoding, reuse, capacity guards and complete capset responses
+PASS: packed mode bounds, scatter/gather, extent coalescing, unaligned pages, unmapped backing, limits, response/fence validation
+PASS: exact tokens and conflicting write/native options suppressed
+surfaceless-test: test adapter supports OpenGL core mode only
+surfaceless-test: test adapter supports OpenGL core mode only
+surfaceless-test: incompatible QEMU/EGL ABI
+surfaceless-test: test adapter supports OpenGL core mode only
+PASS: surfaceless adapter rejects unsupported modes/ABI and reports Error without a render node

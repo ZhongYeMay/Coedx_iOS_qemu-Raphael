@@ -1,0 +1,7 @@
+#!/bin/sh
+# Explicit opt-in, process-local QEMU 10.0.x EGL software test adapter.
+set -eu
+: "${HACKIOS_QEMU_REAL:?Run scripts/run-virgl-software-test.sh}"
+: "${HACKIOS_SURFACELESS_ADAPTER:?Adapter path is required}"
+export LD_PRELOAD="$HACKIOS_SURFACELESS_ADAPTER${LD_PRELOAD:+:$LD_PRELOAD}"
+exec "$HACKIOS_QEMU_REAL" "$@"

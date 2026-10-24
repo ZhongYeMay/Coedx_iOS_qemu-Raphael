@@ -1,0 +1,33 @@
+surfaceless-test: EGL 1.5, GL_RENDERER=llvmpipe (LLVM 19.1.7, 256 bits); SOFTWARE HOST TEST ONLY
+virtio-gpu: host features 0x101:30000013; VERSION_1 with VIRGL (opt-in)
+virtio-gpu: scanout0 enabled=1 preferred=1125x2048
+virtio-gpu: capset 0: id=1 version=1 bytes=308
+virtio-gpu: virgl v1 capabilities accepted; BGRA8 render target supported
+virtio-gpu: VIRGL_CLEAR pass 1: expected=0xffff0000 first=0xffff0000 mismatches=0/4096 fence=9
+virtio-gpu: VIRGL_CLEAR pass 2: expected=0xff00ff00 first=0xff00ff00 mismatches=0/4096 fence=11
+virtio-gpu: VIRGL_3D_SELFTEST PASS: context, resource3D, submit, readback, cleanup; no CoreAnimation acceleration
+virtio-gpu: backing 9216000 bytes in 1 physical extents, first=0x1fd5a1000; no guest pixel copy
+virtio-gpu: READY 1125x2048, resource1, virgl-backed scanout; CoreAnimation renderer remains software
+redwood: no accelerated renderer; the software one will draw
+virtio-gpu: presented frame 1, completed fence 23 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 2, completed fence 25 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 3, completed fence 27 (TRANSFER+FLUSH)
+2026-10-24 07:37:25.504970+0000 backboardd[11:431] [SystemShell] System shell "com.apple.springboard" finished startup after 33.41s.
+virtio-gpu: presented frame 120, completed fence 261 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 240, completed fence 501 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 360, completed fence 741 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 480, completed fence 981 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 600, completed fence 1221 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 720, completed fence 1461 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 840, completed fence 1701 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 960, completed fence 1941 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1080, completed fence 2181 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1200, completed fence 2421 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1320, completed fence 2661 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1440, completed fence 2901 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1560, completed fence 3141 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1680, completed fence 3381 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1800, completed fence 3621 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 1920, completed fence 3861 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 2040, completed fence 4101 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 2160, completed fence 4341 (TRANSFER+FLUSH)

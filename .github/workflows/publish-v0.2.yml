@@ -1,0 +1,99 @@
+name: Publish v0.2 experimental build
+on:
+  push:
+    branches: [gpu/virgl-transport-v0.2]
+    paths: [.github/workflows/publish-v0.2.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release-v0.2.0-pre.1
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'ZhongYeMay/Coedx_iOS_qemu-Raphael'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the exact build source
+        uses: actions/checkout@v4
+        with:
+          ref: 51a8fa1bd398a8191bb948123663bf9da2e17c51
+          persist-credentials: false
+      - name: Verify, upload and publish the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import tarfile
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          tag = 'v0.2.0-pre.1'
+          source = '51a8fa1bd398a8191bb948123663bf9da2e17c51'
+          name = 'qemu-virgl-transport-v0.2-arm64.tar.gz'
+          archive = Path('downloads') / name
+          out = Path('release-assets')
+          out.mkdir()
+
+          def sha(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path], text=True))
+
+          checksums = {}
+          for line in Path('SHA256SUMS').read_text().splitlines():
+              digest, path = line.split(maxsplit=1)
+              checksums[path.strip()] = digest
+          assert sha(archive) == checksums[str(archive)], 'archive checksum mismatch'
+          prefix = 'qemu-virgl-v0.2/'
+          with tarfile.open(archive) as tar:
+              manifest_bytes = tar.extractfile(prefix + 'ARTIFACTS.json').read()
+              manifest = json.loads(manifest_bytes)
+              for path, entry in manifest['files'].items():
+                  data = tar.extractfile(prefix + path).read()
+                  assert len(data) == entry['size'], path
+                  assert hashlib.sha256(data).hexdigest() == entry['sha256'], path
+              kernel = tar.extractfile(prefix + 'build/mach.qemu-virgl-transport.arm64').read()
+          (out / name).write_bytes(archive.read_bytes())
+          (out / 'mach.qemu-virgl-transport.arm64').write_bytes(kernel)
+          (out / 'ARTIFACTS.json').write_bytes(manifest_bytes)
+          (out / 'SHA256SUMS').write_text(''.join(
+              sha(path) + '  ' + path.name + '\n' for path in sorted(out.iterdir())
+          ))
+          assets = sorted(out.iterdir())
+          # Drafts without a published tag are not returned by the tag endpoint.
+          release = api(f'repos/{repo}/releases/422600429')
+          assert release['tag_name'] == tag, 'unexpected release tag'
+          assert release['target_commitish'] == source, 'unexpected release source'
+          if not release['draft']:
+              print('Release is already published; verifying existing assets only.')
+          else:
+              existing = {asset['name'] for asset in release['assets']}
+              assert existing <= {path.name for path in assets}, 'unexpected draft assets'
+              for path in assets:
+                  if path.name not in existing:
+                      subprocess.run(['gh', 'release', 'upload', tag, str(path), '--repo', repo], check=True)
+          verify = Path('download-verification')
+          verify.mkdir()
+          subprocess.run(['gh', 'release', 'download', tag, '--repo', repo, '--dir', str(verify)], check=True)
+          for path in assets:
+              assert sha(path) == sha(verify / path.name), path.name
+              print(f'Verified uploaded asset: {path.name} ({path.stat().st_size} bytes)')
+          if release['draft']:
+              subprocess.run([
+                  'gh', 'release', 'edit', tag, '--repo', repo,
+                  '--draft=false', '--prerelease', '--latest=false'
+              ], check=True)
+          published = api(f'repos/{repo}/releases/422600429')
+          assert not published['draft'] and published['prerelease']
+          assert published['target_commitish'] == source
+          print('Published:', published['html_url'])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f'Published [{tag}]({published["html_url"]}).\n\n')
+              summary.write('All four assets were downloaded and SHA-256 verified before publication.\n')
+          PY

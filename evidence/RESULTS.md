@@ -13,3 +13,14 @@
 - 新发布目录使用本地固定版本镜像实际执行了准备脚本，补丁接入成功；五组主机测试再次通过。
 
 编译包及其完整日志见 `downloads/`；SHA256见仓库根目录。脚本只准备源码，复现完整系统启动还需要自行准备工具链、SDK和系统镜像。
+
+## v0.2：virgl v1 传输验证
+
+新增运行时证据见 `virgl-v0.2.log`，详细环境与限制见 `experimental/virgl/README.md`。
+
+- 补齐QEMU OpenGL模块及virglrenderer后，使用显式进程级EGL测试适配器，在没有DRM节点的宿主创建llvmpipe上下文。
+- XNU完成virgl v1 capset、上下文、3D资源、清屏提交、fence、读回与资源清理测试。
+- 红、绿两轮各4096像素校验，差异均为0；不是着色器或几何绘制测试。
+- 完整iOS继续启动，SpringBoard完成初始化，CoreAnimation仍为软件渲染。
+- GL扫描输出的QMP截图返回`no surface`。本轮界面截图标记为ramfb镜像，不当作GL输出证据。
+- 普通2D模式保持默认；新主机测试还覆盖virgl报文及EGL适配器错误契约。
