@@ -1,0 +1,4 @@
+PASS: firmware truncation, overflow, regions, overlap, record limits, validation before upload, sink failures
+PASS: power/source guards, bounded clock timeout, failed writes, reverse cleanup, unrelated/inherited votes
+PASS: real A640 firmware: 37680 bytes, 7 segments, TCM=21856 external=15712, copied=37568 bytes (mock sinks)
+PASS: exhaustive firmware truncations and 10000 deterministic byte mutations under sanitizers

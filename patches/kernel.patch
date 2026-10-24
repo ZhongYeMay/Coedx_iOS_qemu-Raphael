@@ -1,0 +1,273 @@
+diff --git a/xnu/files/bsd/dev/redwood_input.c b/xnu/files/bsd/dev/redwood_input.c
+index 8076cf0..adb582e 100644
+--- a/xnu/files/bsd/dev/redwood_input.c
++++ b/xnu/files/bsd/dev/redwood_input.c
+@@ -214,6 +214,15 @@ redwood_input_init(void)
+ 		printf("redwood-touch: cannot create the device\n");
+ 	}
+ 	exit_call = thread_call_allocate(exit_hold_elapsed, NULL);
++	uint32_t raphael = 0;
++	PE_parse_boot_argn("raphael", &raphael, sizeof(raphael));
++	if (raphael == 1) {
++		/* The other device's GPIO, EPSS, GPU and DSP addresses are not SM8150's. */
++		raphael_adreno_init();
++		raphael_touch_init();
++		redwood_ufs_init();
++		return;
++	}
+ 	redwood_cpufreq_init();
+ 	redwood_virtio_input_init();
+ 	redwood_goodix_init();
+diff --git a/xnu/files/bsd/dev/redwood_ufs.c b/xnu/files/bsd/dev/redwood_ufs.c
+index efa2fda..02f50cc 100644
+--- a/xnu/files/bsd/dev/redwood_ufs.c
++++ b/xnu/files/bsd/dev/redwood_ufs.c
+@@ -1443,6 +1443,12 @@ redwood_ufs_init(void)
+ {
+ 	uint64_t pa = 0, buffer_pa;
+ 	uint32_t check = 0, made = 0;
++	int raphael_readonly = 0;
++	PE_parse_boot_argn("raphael_ufs", &raphael_readonly, sizeof(raphael_readonly));
++	raphael_readonly = raphael_readonly == 1;
++	int raphael_board = 0;
++	PE_parse_boot_argn("raphael", &raphael_board, sizeof(raphael_board));
++	raphael_readonly |= raphael_board == 1;
+ 	vm_offset_t base;
+ 
+ 	if (!PE_parse_boot_argn("ufs_shared_pa", &pa, sizeof(pa)) || pa == 0) {
+@@ -1497,7 +1503,7 @@ redwood_ufs_init(void)
+ 	 * it; the loader looks at its GUIDs besides, and refuses the same bounds of its own accord.
+ 	 */
+ 	check = 0;
+-	if (PE_parse_boot_argn("ufs_write", &check, sizeof(check)) && check == 1) {
++	if (!raphael_readonly && PE_parse_boot_argn("ufs_write", &check, sizeof(check)) && check == 1) {
+ 		uint32_t offered = ufs_page->write_part_plus_one;
+ 
+ 		if (offered == 0 || offered > ufs_parts || ufs_page->write_first != UFS_WRITE_FIRST) {
+@@ -1548,7 +1554,7 @@ redwood_ufs_init(void)
+ 	 */
+ 	check = 0;
+ 	memset(ufs_lun, 0xff, sizeof(ufs_lun));
+-	if (PE_parse_boot_argn("ufs_native", &check, sizeof(check)) && check != 0) {
++	if (!raphael_readonly && PE_parse_boot_argn("ufs_native", &check, sizeof(check)) && check != 0) {
+ 		struct ufshc_loader offer = {
+ 			.hc_pa = ufs_page->native.hc_pa, .area_pa = ufs_page->native.area_pa,
+ 			.area_size = ufs_page->native.area_size, .ucd_offset = ufs_page->native.ucd_offset,
+diff --git a/xnu/files/bsd/sys/redwood_input.h b/xnu/files/bsd/sys/redwood_input.h
+index bb8ad1b..21c5b52 100644
+--- a/xnu/files/bsd/sys/redwood_input.h
++++ b/xnu/files/bsd/sys/redwood_input.h
+@@ -41,6 +41,9 @@ void redwood_touch_post(uint32_t type, uint32_t finger, uint32_t x, uint32_t y);
+ void redwood_input_init(void);
+ void redwood_virtio_input_init(void);   /* boot-arg virtio_input=1: QEMU's virtio pointer and keyboard */
+ void redwood_goodix_init(void);         /* boot-arg touchscreen=1: the phone's Goodix or FocalTech touch screen */
++void raphael_adreno_init(void);         /* raphael_gpu=1..5: A640 bring-up, no acceleration */
++void raphael_touch_init(void);          /* raphael=1 raphael_touch=1: GT9886 on GPIO I2C */
++void raphael_touch_quiesce(void);       /* stop polling and restore touch pins on return */
+ void redwood_buttons_init(void);        /* boot-arg buttons=1: the phone's power and volume keys */
+ void redwood_ufs_init(void);           /* ufs=2 to xnuloader: the phone's storage, read only, through the loader (ufs_shared_pa=) */
+ void redwood_ufs_report(const char *when); /* where reading the storage has spent its time so far */
+diff --git a/xnu/files/iokit/Kernel/MiniIOMobileFramebuffer.cpp b/xnu/files/iokit/Kernel/MiniIOMobileFramebuffer.cpp
+index a537cb6..9ed516e 100644
+--- a/xnu/files/iokit/Kernel/MiniIOMobileFramebuffer.cpp
++++ b/xnu/files/iokit/Kernel/MiniIOMobileFramebuffer.cpp
+@@ -41,6 +41,8 @@ extern struct vc_info vinfo;            /* the boot framebuffer, as the text con
+ #include "MiniIOSurface.h"
+ 
+ extern "C" void redwood_tl(const char * format, ...) __printflike(1, 2);
++extern "C" bool redwood_virtio_gpu_start(const void *, uint32_t, uint32_t, uint32_t);
++extern "C" void redwood_virtio_gpu_present(void);
+ 
+ /* IOConnectCallMethod selectors of the framebuffer user client (iOS 16.5) */
+ enum {
+@@ -449,6 +451,11 @@ IOMobileFramebuffer::start(IOService * provider)
+ 	IOLog("MiniIOMobileFramebuffer: display %ux%u on a panel of %ux%u (%u bytes per row)\n", fWidth, fHeight,
+ 	    fPanelWidth, fPanelHeight, fRowBytes);
+ 
++	/* Optional QEMU VirtIO-GPU 2D scanout. This does not create a 3D accelerator. */
++	if (redwood_virtio_gpu_start(fBase, fPanelWidth, fPanelHeight, fRowBytes)) {
++		setProperty("QEMU-VirtioGPU-2D", kOSBooleanTrue);
++	}
++
+ 	if (gRecSeconds != 0) {
+ 		/* one piece of physical memory: the loader will send it over USB as it lies */
+ 		IOBufferMemoryDescriptor * memory = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
+@@ -1042,6 +1049,7 @@ IOMobileFramebuffer::show(const uint8_t * swap, MiniIOSurface ** surfaces)
+ 			}
+ 		}
+ 	}
++	redwood_virtio_gpu_present();
+ 	drawn = mach_absolute_time();
+ 	if (recorded != NULL) {
+ 		record(recorded);
+@@ -1627,6 +1635,7 @@ MiniIOMobileFramebufferShow(const uint8_t * pixels, uint32_t width, uint32_t hei
+ 		memcpy((void *) (vinfo.v_baseaddr + (size_t) y * vinfo.v_rowbytes), pixels + (size_t) y * rowBytes,
+ 		    (size_t) columns * 4);
+ 	}
++	redwood_virtio_gpu_present();
+ }
+ 
+ void
+diff --git a/xnu/files/osfmk/arm64/loader_return.c b/xnu/files/osfmk/arm64/loader_return.c
+index a058bb5..4b2d680 100644
+--- a/xnu/files/osfmk/arm64/loader_return.c
++++ b/xnu/files/osfmk/arm64/loader_return.c
+@@ -57,6 +57,7 @@ extern void redwood_torch_quiesce(void);
+ extern void redwood_camera_quiesce(void);
+ extern void redwood_mic_quiesce(void);
+ extern void redwood_ufs_quiesce(void);
++extern void raphael_touch_quiesce(void);
+ extern void redwood_var_save_on_return(void);   /* bsd/dev/redwood_ufs.c: the data volume into the flash */
+ void loader_checkpoint(uint64_t n);
+ 
+@@ -361,6 +362,8 @@ loader_log_append_msgbuf(void)
+ void
+ loader_return(void)
+ {
++	/* Let a transfer on another CPU finish before PSCI stops its thread. */
++	raphael_touch_quiesce();
+ #if defined(GENERIC_PSCI_SMP)
+ 	/*
+ 	 * With more than one processor: the others switch themselves off first, and the rest of
+diff --git a/xnu/redwood.patch b/xnu/redwood.patch
+index 8f7dd87..903e931 100644
+--- a/xnu/redwood.patch
++++ b/xnu/redwood.patch
+@@ -65,13 +65,16 @@ diff --git a/bsd/conf/files b/bsd/conf/files
+ index 44274016a4cf..9cd24b42caca 100644
+ --- a/bsd/conf/files
+ +++ b/bsd/conf/files
+-@@ -109,6 +109,37 @@ bsd/dev/munge.c 			optional config_requires_u32_munging
++@@ -109,6 +109,40 @@ bsd/dev/munge.c 			optional config_requires_u32_munging
+  bsd/dev/unix_startup.c			standard
+  
+  bsd/dev/monotonic.c optional monotonic
+ +bsd/dev/redwood_input.c		standard
+ +bsd/dev/redwood_virtio_input.c	standard
+++bsd/dev/redwood_virtio_gpu.c	standard
+ +bsd/dev/redwood_goodix.c	standard
+++bsd/dev/raphael_touch.c		standard
+++bsd/dev/raphael_adreno.c		standard
+ +bsd/dev/redwood_buttons.c	standard
+ +bsd/dev/redwood_battery.c	standard
+ +bsd/dev/redwood_ufs.c	standard
+diff --git a/xnuloader/loader.c b/xnuloader/loader.c
+index c31969c..9d1e98f 100644
+--- a/xnuloader/loader.c
++++ b/xnuloader/loader.c
+@@ -10,6 +10,7 @@
+  *   - exits boot services, turns the MMU off and jumps to the kernel entry
+  */
+ #include "efi.h"
++#include "raphael_ufs_policy.h"
+ #include "identity.h"         /* who iOS shall think we are: from the iPhone's own device tree (mkidentity.py) */
+ 
+ /* ------------------------------------------------------------------------ */
+@@ -330,6 +331,11 @@ static void hc_take_back(const char *when);
+ static void
+ write_logs(const char *klog, uint64_t klog_len)
+ {
++#ifdef RAPHAEL_BUILD
++	/* First bring-up must not reuse redwood's logdump writes or controller checks. */
++	compose_logs(klog, klog_len);
++	return;
++#endif
+ 	efi_block_io *bio = find_log_partition();
+ 
+ 	compose_logs(klog, klog_len);
+@@ -553,6 +559,20 @@ static const struct platform platform_redwood = {
+ 	.fb_base = 0xE1000000,
+ };
+ 
++#ifdef RAPHAEL_BUILD
++/* Board reference: sm8150.dtsi + sm8150-xiaomi-raphael.dts. GOP still needs true-device validation. */
++#ifndef RAPHAEL_FB_BASE
++#define RAPHAEL_FB_BASE 0x9c000000ULL
++#endif
++static const struct platform platform_raphael = {
++	.name = "raphael", .io_base = 0x00400000, .io_size = 0x3fc00000,
++	.gic_dist = 0x17a00000, .gic_redist = 0x17a60000,
++	.uart = 0, .psci_hvc = 0, .log_other_cpu = 0,
++	.cores = 8, .core_shift = 8, .small_cores = 0x0f,
++	.fb_base = RAPHAEL_FB_BASE,
++};
++#endif
++
+ /*
+  * The devices the loader knows, told apart by the framebuffer base their UEFI reports. A port to another
+  * device adds its description here (common/new-device.sh writes a starting point, docs/PORTING.md says
+@@ -560,6 +580,9 @@ static const struct platform platform_redwood = {
+  */
+ static const struct platform *const platforms[] = {
+ 	&platform_redwood,
++#ifdef RAPHAEL_BUILD
++	&platform_raphael,
++#endif
+ };
+ 
+ /* ------------------------------------------------------------------------ */
+@@ -2670,6 +2693,12 @@ print_memory_map(void)
+ static int
+ choose_window(const struct payload_info *pi)
+ {
++#ifdef RAPHAEL_BUILD
++	if (pi->forced_base) {
++		print("raphael: refusing forced RAM window; use verified UEFI memory map\n");
++		return 0;
++	}
++#endif
+ 	static uint8_t map_buf[65536];
+ 	uint64_t map_size = sizeof(map_buf), map_key, desc_size;
+ 	uint32_t desc_ver;
+@@ -2879,6 +2908,19 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
+ 		hc_requested |= starts_with(c, "ufs_native=") && (c == pi.cmdline || c[-1] == ' ') && c[11] >= '1' &&
+ 		    c[11] <= '9';
+ 	}
++	if (raphael_ufs_enabled(pi.cmdline)
++#ifdef RAPHAEL_BUILD
++	    || PLAT == &platform_raphael
++#endif
++	    ) {
++		raphael_ufs_loader_policy(&ufs_requested, &block_write_requested, &hc_requested, &block_probe_requested);
++		print("raphael: UFS mailbox only; writes and native takeover disabled\n");
++	}
++#ifdef RAPHAEL_BUILD
++	/* Keep the firmware's core available to answer mailbox reads. */
++	if (kernel_mpidr == this_mpidr) kernel_mpidr = this_mpidr == 0 ? 0x100 : 0;
++	battery_requested = torch_requested = camera_requested = 0;
++#endif
+ 	if (battery_requested) {
+ 		charger_start();
+ 	}
+@@ -2968,6 +3010,9 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
+ 		own_serial |= starts_with(c, "serial=");
+ 	}
+ 	const char *base_cmdline = (PLAT->uart != 0 && !own_serial) ? "debug=0x8 serial=3 " : "debug=0x8 ";
++#ifdef RAPHAEL_BUILD
++	base_cmdline = "debug=0x8 raphael=1 raphael_ufs=1 ";
++#endif
+ 	uint32_t n = 0;
+ 	for (const char *c = base_cmdline; *c && n < BOOT_LINE_LENGTH - 1; c++) {
+ 		ba->commandLine[n++] = *c;
+@@ -3952,10 +3997,21 @@ efi_main(efi_handle image, efi_system_table *st)
+ 			if (platforms[i]->fb_base == SCREEN.base)
+ 				PLAT = platforms[i];
+ 		if (PLAT == &platform_qemu_virt)
++#ifndef RAPHAEL_BUILD
+ 			ramfb_phone_screen();
++#else
++			print("raphael: unknown GOP address; refusing QEMU fallback\n");
++#endif
+ 		print("display %d x %d at %x\n", (uint64_t)SCREEN.width, (uint64_t)SCREEN.height, SCREEN.base);
+ 	}
+ 	print("platform %s\n", PLAT->name);
++#ifdef RAPHAEL_BUILD
++	if (PLAT != &platform_raphael || SCREEN.width != 1080 || SCREEN.height != 2340 ||
++	    SCREEN.stride < 1080 * 4) {
++		print("raphael: expected verified 1080x2340 GOP at %x; platform not enabled\n", RAPHAEL_FB_BASE);
++		return EFI_ERROR_BIT | 3; /* EFI_UNSUPPORTED, before platform hardware access. */
++	}
++#endif
+ 
+ 	install_exception_hook();
+ 	wdt_arm();

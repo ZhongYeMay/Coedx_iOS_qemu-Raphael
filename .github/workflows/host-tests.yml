@@ -1,0 +1,11 @@
+name: Host protocol and driver tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run ASan/UBSan tests
+        run: bash scripts/test-host.sh

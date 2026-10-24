@@ -1,0 +1,3 @@
+Exposed /dev/dri: False
+Exposed /dev/kvm: False
+Available backend: virtio-gpu-device 2D

@@ -1,0 +1,3 @@
+# A patch is a text artifact: its context prefix is required, not source indentation.
+*.patch -whitespace
+*.log text eol=lf

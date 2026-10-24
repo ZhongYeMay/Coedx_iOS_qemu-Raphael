@@ -1,0 +1,11 @@
+/build/
+/work/
+__pycache__/
+*.pyc
+*.apfs
+*.dmg
+*.ipsw
+*.img
+/fw-gpu/
+.env
+.env.*

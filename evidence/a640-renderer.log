@@ -1,0 +1,5 @@
+raphael-gpu: experimental A640 bring-up stage 5; acceleration unavailable
+raphael-gpu: fw/a640_gmu.bin missing or oversized; hardware untouched
+redwood: no accelerated renderer; the software one will draw
+
+2026-10-24 01:21:44.212020+0000 backboardd[11:298] [WindowServer] CoreAnimation: Software renderer! Simulating crash!

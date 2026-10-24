@@ -1,0 +1,38 @@
+diff --git a/userland/build.sh b/userland/build.sh
+index a3f40de..dd15863 100755
+--- a/userland/build.sh
++++ b/userland/build.sh
+@@ -494,7 +494,7 @@ if [ -d $IOS/rootfs/usr/lib ]; then
+ 	cp $IOS/var.skel root/etc/var.skel              # the directories init creates in /private/var
+ 	# time zones: the template's links go in a circle until the time zone daemon has run (/usr/share/zoneinfo
+ 	# points back into /var); point them at the data that ships with the system, and use this machine's zone
+-	zone=$(timedatectl show -p Timezone --value 2>/dev/null); zone=${zone:-UTC}
++	zone=$(timedatectl show -p Timezone --value 2>/dev/null || true); zone=${zone:-UTC}
+ 	sed -i -e 's|^l\t/usr/share/zoneinfo\t/private/var/db/timezone/zoneinfo$|l\t/usr/share/zoneinfo.default\t/private/var/db/timezone/zoneinfo|' \
+ 		-e "s|^l\t/var/db/timezone/zoneinfo/[^\t]*\t/private/var/db/timezone/localtime\$|l\t/var/db/timezone/zoneinfo/$zone\t/private/var/db/timezone/localtime|" root/etc/var.skel
+ 	# ... and the files of ours it puts there (var/): those under mobile/ belong to the user mobile
+diff --git a/userland/src/init.c b/userland/src/init.c
+index f21bca0..47cbcfe 100644
+--- a/userland/src/init.c
++++ b/userland/src/init.c
+@@ -1442,6 +1442,20 @@ main(int argc, char **argv, char **envp)
+ 
+ 	show_system();
+ 	mount_writable();
++	/* The RAM recipe carries the OS cryptex as a directory, without Apple's grafts.
++	 * Its trampoline libraries must also be reachable under their /usr/lib install names.
++	 * Union lookup keeps the root volume's remaining libraries visible underneath. */
++	{
++		struct stat tramp;
++		const char *source = "/System/Cryptexes/OS/usr/lib";
++		if (stat("/usr/lib/libobjc-trampolines.dylib", &tramp) != 0 &&
++		    stat("/System/Cryptexes/OS/usr/lib/libobjc-trampolines.dylib", &tramp) == 0) {
++			check(mount("bindfs", "/usr/lib", MNT_RDONLY | MNT_UNION, (void *)source) == 0,
++			    "OS cryptex libraries grafted over /usr/lib");
++			check(stat("/usr/lib/libobjc-trampolines.dylib", &tramp) == 0,
++			    "Objective-C trampolines reachable at their install name");
++		}
++	}
+ 	restore_var();
+ 	test_files();
+ 	test_writable();

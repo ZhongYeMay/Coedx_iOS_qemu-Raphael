@@ -1,0 +1,12 @@
+virtio-gpu: host features 0x101:30000002; negotiating VERSION_1 only (no VIRGL/3D)
+virtio-gpu: scanout0 enabled=1 preferred=1125x2048
+virtio-gpu: backing 9216000 bytes in 1 physical extents, first=0x1fd5a1000; no guest pixel copy
+virtio-gpu: READY 1125x2048, resource1, 2D scanout; CoreAnimation renderer remains software
+redwood: no accelerated renderer; the software one will draw
+2026-10-24 01:27:35.610864+0000 backboardd[11:302] [WindowServer] CoreAnimation: Software renderer! Simulating crash!
+virtio-gpu: presented frame 1, completed fence 10 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 2, completed fence 12 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 3, completed fence 14 (TRANSFER+FLUSH)
+2026-10-24 01:30:45.650386+0000 backboardd[11:425] [SystemShell] System shell "com.apple.springboard" finished startup after 32.96s.
+virtio-gpu: presented frame 120, completed fence 248 (TRANSFER+FLUSH)
+virtio-gpu: presented frame 240, completed fence 488 (TRANSFER+FLUSH)

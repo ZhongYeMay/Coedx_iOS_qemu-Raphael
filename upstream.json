@@ -1,0 +1,10 @@
+{
+  "kernel": {
+    "url": "https://github.com/oosexgang/hackios-xnu-kernel.git",
+    "commit": "d82c64a3a31cd27a0a0afbf6e213e467e44b1b4c"
+  },
+  "userland": {
+    "url": "https://github.com/oosexgang/hackios-xnu-userland.git",
+    "commit": "a79ff0772a3454fd1ef127e181e5b3bce6c9ce18"
+  }
+}
