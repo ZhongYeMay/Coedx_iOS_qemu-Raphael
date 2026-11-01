@@ -1,0 +1,86 @@
+name: iOS 27 tooling prerelease
+on:
+  push:
+    branches: [ios27-development]
+    paths: [releases/ios27.json]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios27-tooling-release
+  cancel-in-progress: false
+jobs:
+  test-and-release:
+    if: github.repository == 'ZhongYeMay/Coedx_iOS_qemu-Raphael' && github.ref == 'refs/heads/ios27-development'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate prerelease metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          data = json.load(open('releases/ios27.json'))
+          tag = data.get('tag', '')
+          if data.get('prerelease') is not True or not re.fullmatch(r'v\d+\.\d+\.\d+-pre\.[1-9]\d*', tag):
+              raise SystemExit('Only explicitly numbered prereleases are supported; stable releases require runtime evidence review')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write('tag=' + tag + '\n')
+          PY
+      - name: Run synthetic host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests/ios27 -v 2>&1 | tee /tmp/ios27-tests.log
+          python3 -m py_compile tools/ios27/ios27.py
+      - name: Record host preflight without booting
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          python3 tools/ios27/ios27.py check > /tmp/ios27-host-preflight.json || status=$?
+          test "$status" -eq 0 || test "$status" -eq 2
+      - name: Package source and evidence
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir dist
+          git archive --format=tar.gz --prefix="ios27-tooling-${TAG}/" \
+            --output="dist/ios27-tooling-${TAG}.tar.gz" "$GITHUB_SHA" \
+            tools/ios27 tests/ios27 docs/ios27 releases/ios27.json LICENSE NOTICE.md
+          cp /tmp/ios27-tests.log dist/tests.log
+          cp /tmp/ios27-host-preflight.json dist/host-preflight.json
+          printf '%s\n' "$GITHUB_SHA" > dist/SOURCE_COMMIT.txt
+          (cd dist && sha256sum *.tar.gz tests.log host-preflight.json SOURCE_COMMIT.txt > SHA256SUMS)
+      - name: Publish prerelease after tests and asset upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; use a new version instead of overwriting it.' >&2
+            exit 1
+          fi
+          tag_status=0
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" || tag_status=$?
+          if test "$tag_status" -eq 0; then
+            echo 'Tag already exists; refusing to publish against a potentially different commit.' >&2
+            exit 1
+          elif test "$tag_status" -ne 2; then
+            echo 'Could not verify remote tag absence; refusing to publish.' >&2
+            exit 1
+          fi
+          gh release create "$TAG" dist/* --draft --prerelease --latest=false \
+            --target "$GITHUB_SHA" --title "$TAG - iOS 27 preflight tooling" \
+            --notes-file docs/ios27/RELEASE_NOTES.md
+          gh release edit "$TAG" --draft=false --prerelease --latest=false
